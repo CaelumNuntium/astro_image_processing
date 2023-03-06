@@ -1,7 +1,10 @@
 import pathlib
 import argparse
+import os
 import numpy
 import warnings
+
+import numpy as np
 from astropy.io import fits
 
 parser = argparse.ArgumentParser()
@@ -10,7 +13,7 @@ args = parser.parse_args()
 
 attributes = ["DATE-OBS", "TELESCOP", "INSTRUME", "OBJECT", "IMAGETYP", "START", "EXPTIME", "RA", "DEC"]
 
-fits_names = [str(_) for _ in pathlib.Path(args.dir).glob("**/*.fits")] + [str(_) for _ in pathlib.Path(args.dir).glob("**/*.fts")]
+fits_names = [str(_) for _ in pathlib.Path(args.dir).glob("**/*.fits") if _ not in pathlib.Path(args.dir).glob("**/aimp/**/*.fits")] + [str(_) for _ in pathlib.Path(args.dir).glob("**/*.fts") if _ not in pathlib.Path(args.dir).glob("**/aimp/**/*.fits")]
 fits_names = [_ for _ in fits_names]
 print(f"{len(fits_names)} FITS files found in {args.dir}")
 fits_files = []
@@ -75,18 +78,24 @@ for i in range(len(obj_files)):
 for i in bias_nums:
     if fits_files[i][0].data.shape != shape:
         print(f"Warning: Shape of BIAS frame in {fits_names[i]} is not equal to the object frame shape! This frame will be ignored.")
+        bias_nums.remove(i)
 bias_files = [fits_files[i - 1] for i in bias_nums]
 for i in dark_nums:
     if fits_files[i][0].data.shape != shape:
         print(f"Warning: Shape of DARK frame in {fits_names[i]} is not equal to the object frame shape! This frame will be ignored.")
+        dark_nums.remove(i)
 dark_files = [fits_files[i - 1] for i in dark_nums]
 for i in flat_nums:
     if fits_files[i][0].data.shape != shape:
         print(f"Warning: Shape of FLAT frame in {fits_names[i]} is not equal to the object frame shape! This frame will be ignored.")
+        flat_nums.remove(i)
 flat_files = [fits_files[i - 1] for i in flat_nums]
 
 exptime = max([img[0].header["EXPTIME"] for img in obj_files])
 datatype = numpy.dtype('f4')
+
+if not os.path.exists(args.dir + "/aimp/tmp"):
+    os.makedirs(args.dir + "/aimp/tmp")
 
 if len(bias_nums) > 0:
     bias_data = numpy.ndarray(shape=shape, dtype=datatype)
@@ -97,7 +106,7 @@ bias_header = fits.Header()
 bias_header["IMAGETYP"] = "bias"
 bias_header["EXPTIME"] = 0.0
 bias_hdu = fits.PrimaryHDU(data=bias_data, header=bias_header)
-fits.HDUList([bias_hdu]).writeto("mean_bias.fits", overwrite=True)
+fits.HDUList([bias_hdu]).writeto(args.dir + "/aimp/tmp/mean_bias.fits", overwrite=True)
 
 if len(dark_nums) > 0:
     dark_data = numpy.ndarray(shape=shape, dtype=datatype)
@@ -107,7 +116,7 @@ else:
 dark_header = fits.Header()
 dark_header["EXPTIME"] = exptime
 dark_hdu = fits.PrimaryHDU(data=dark_data, header=dark_header)
-fits.HDUList([dark_hdu]).writeto("mean_dark.fits", overwrite=True)
+fits.HDUList([dark_hdu]).writeto(args.dir + "/aimp/tmp/mean_dark.fits", overwrite=True)
 
 if len(flat_nums) > 0:
     flat_data = numpy.ndarray(shape=shape, dtype=datatype)
@@ -121,7 +130,7 @@ flat_header["IMAGETYP"] = "obj"
 flat_header["OBJECT"] = "sunsky"
 flat_header["EXPTIME"] = exptime
 flat_hdu = fits.PrimaryHDU(data=flat_data, header=flat_header)
-fits.HDUList([flat_hdu]).writeto("mean_flat.fits", overwrite=True)
+fits.HDUList([flat_hdu]).writeto(args.dir + "/aimp/tmp/mean_flat.fits", overwrite=True)
 
 
 obj_data = numpy.ndarray(shape=shape, dtype=datatype)
@@ -129,15 +138,17 @@ with warnings.catch_warnings():
     warnings.simplefilter("ignore")
     if numpy.sum(numpy.where(flat_data < 0.05, 1, 0)) > 0:
         print("Warning: FLAT contains very small elements (<0.05). Corresponding pixels of the result will be taken equal to 0.")
-    numpy.sum([numpy.where(flat_data < 0.05, 0, ((img[0].data - bias_data) * (exptime / img[0].header["EXPTIME"]) - dark_data) / flat_data) for img in obj_files], axis=0, out=obj_data)
+    numpy.sum([numpy.where(flat_data < 0.05, np.NaN, ((img[0].data - bias_data) * (exptime / img[0].header["EXPTIME"]) - dark_data) / flat_data) for img in obj_files], axis=0, out=obj_data)
 obj_header = fits.Header()
 obj_header["IMAGETYP"] = "obj"
 obj_header["OBJECT"] = obj_files[0][0].header["OBJECT"]
-obj_header["EXPTIME"] = exptime
+obj_header["EXPTIME"] = sum([img[0].header["EXPTIME"] for img in obj_files])
 obj_hdu = fits.PrimaryHDU(data=obj_data, header=obj_header)
 
 print("Result file:")
 filename = input()
 if not (filename.endswith(".fts") or filename.endswith(".fits")):
     filename = filename + ".fits"
-fits.HDUList([obj_hdu]).writeto(filename, overwrite=True)
+fits.HDUList([obj_hdu]).writeto(args.dir + "/aimp/" + filename, overwrite=True)
+print(f"Result saved to: {args.dir + '/aimp/' + filename}")
+print(f"BIAS, DARK and FLAT frames saved to directory: {args.dir + '/aimp/tmp'}")
