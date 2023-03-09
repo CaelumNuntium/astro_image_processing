@@ -135,7 +135,7 @@ obj_data = numpy.ndarray(shape=shape, dtype=datatype)
 with warnings.catch_warnings():
     warnings.simplefilter("ignore")
     if numpy.sum(numpy.where(flat_data < 0.05, 1, 0)) > 0:
-        print("Warning: FLAT contains very small elements (<0.05). Corresponding pixels of the result will be taken equal to 0.")
+        print("Warning: FLAT contains very small elements (<0.05). Corresponding pixels of the result will be NaN")
     numpy.sum([numpy.where(flat_data < 0.05, numpy.NaN, ((img[0].data - bias_data) * (exptime / img[0].header["EXPTIME"]) - dark_data) / flat_data) for img in obj_files], axis=0, out=obj_data)
 obj_header = fits.Header()
 obj_header["IMAGETYP"] = "obj"
