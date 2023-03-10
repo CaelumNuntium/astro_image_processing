@@ -4,14 +4,18 @@ import os
 import numpy
 import warnings
 from astropy.io import fits
+from photutils import segmentation
 
+print("Loading...")
 parser = argparse.ArgumentParser()
 parser.add_argument("-d", "--dir", action="store", default=".", help="Input directory")
 args = parser.parse_args()
 
 attributes = ["DATE-OBS", "TELESCOP", "INSTRUME", "OBJECT", "IMAGETYP", "START", "EXPTIME", "RA", "DEC"]
+attrs_to_save = ["DATE-OBS", "TELESCOP", "INSTRUME", "OBJECT", "PROG-ID", "OBSERVAT", "DETECTOR"]
+# attrs_to_calculate = ["Z"]
 
-fits_names = [str(_) for _ in pathlib.Path(args.dir).glob("**/*.fits") if _ not in pathlib.Path(args.dir).glob("**/aimp/**/*.fits")] + [str(_) for _ in pathlib.Path(args.dir).glob("**/*.fts") if _ not in pathlib.Path(args.dir).glob("**/aimp/**/*.fits")]
+fits_names = [str(_) for _ in pathlib.Path(args.dir).glob("**/*.fits") if _ not in pathlib.Path(args.dir).glob("**/aimp/**/*.fits")] + [str(_) for _ in pathlib.Path(args.dir).glob("**/*.fts") if _ not in pathlib.Path(args.dir).glob("**/aimp/**/*.fts")]
 fits_names = [_ for _ in fits_names]
 print(f"{len(fits_names)} FITS files found in {args.dir}")
 fits_files = []
@@ -136,11 +140,27 @@ with warnings.catch_warnings():
     warnings.simplefilter("ignore")
     if numpy.sum(numpy.where(flat_data < 0.05, 1, 0)) > 0:
         print("Warning: FLAT contains very small elements (<0.05). Corresponding pixels of the result will be NaN")
-    numpy.sum([numpy.where(flat_data < 0.05, numpy.NaN, ((img[0].data - bias_data) * (exptime / img[0].header["EXPTIME"]) - dark_data) / flat_data) for img in obj_files], axis=0, out=obj_data)
+    obj_images = [numpy.where(flat_data < 0.05, numpy.NaN, ((img[0].data - bias_data) * (exptime / img[0].header["EXPTIME"]) - dark_data) / flat_data) for img in obj_files]
+    # Matching algorithm will be here
+numpy.sum(obj_images, axis=0, out=obj_data)
 obj_header = fits.Header()
 obj_header["IMAGETYP"] = "obj"
-obj_header["OBJECT"] = obj_files[0][0].header["OBJECT"]
 obj_header["EXPTIME"] = sum([img[0].header["EXPTIME"] for img in obj_files])
+scale = obj_files[0][0].header["IMSCALE"]
+for img in obj_files:
+    if img[0].header["IMSCALE"] != scale:
+        print("Error: Image scale must be the same!")
+        exit(3)
+obj_header["IMSCALE"] = scale
+for attr in attrs_to_save:
+    attr0 = obj_files[0][0].header[attr]
+    attr_stat = True
+    for img in obj_files:
+        if img[0].header[attr] != attr0:
+            print(f"Warning: Non equal values of {attr} attribute")
+            attr_stat = False
+    if attr_stat:
+        obj_header[attr] = attr0
 obj_hdu = fits.PrimaryHDU(data=obj_data, header=obj_header)
 
 print("Result file:")
