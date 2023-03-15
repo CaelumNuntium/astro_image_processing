@@ -4,7 +4,6 @@ import os
 import numpy
 import warnings
 from astropy.io import fits
-from photutils import segmentation
 
 print("Loading...")
 parser = argparse.ArgumentParser()
@@ -141,7 +140,6 @@ with warnings.catch_warnings():
     if numpy.sum(numpy.where(flat_data < 0.05, 1, 0)) > 0:
         print("Warning: FLAT contains very small elements (<0.05). Corresponding pixels of the result will be NaN")
     obj_images = [numpy.where(flat_data < 0.05, numpy.NaN, ((img[0].data - bias_data) * (exptime / img[0].header["EXPTIME"]) - dark_data) / flat_data) for img in obj_files]
-    # Matching algorithm will be here
 numpy.sum(obj_images, axis=0, out=obj_data)
 obj_header = fits.Header()
 obj_header["IMAGETYP"] = "obj"
