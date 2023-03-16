@@ -5,20 +5,24 @@ from astropy.io import fits
 from astropy import stats
 from photutils import background
 
-box_size = (64, 64)
+box_size = (128, 128)
 
 parser = argparse.ArgumentParser()
 parser.add_argument("input", action="store", help="input file name")
 parser.add_argument("-out", "--output", action="store", default=".", help="output directory")
 args = parser.parse_args()
 fits_file = fits.open(args.input)
-sigma_clip = stats.SigmaClip(sigma=5.0)
+sigma_clip = stats.SigmaClip(sigma=3.0)
 res = []
 backgrounds = []
 for img in fits_file:
-    bkg = background.Background2D(img.data, box_size, filter_size=(11, 11), sigma_clip=sigma_clip, bkg_estimator=background.MedianBackground(), coverage_mask=(img.data == numpy.nan), fill_value=0.0)
+    bkg = background.Background2D(img.data, box_size, filter_size=(7, 7), sigma_clip=sigma_clip, bkg_estimator=background.MedianBackground(), coverage_mask=(img.data == numpy.nan), fill_value=0.0)
     backgrounds.append(bkg.background)
-    res.append(img.data - bkg.background)
+    print(f"Image median: {numpy.nanmedian(img.data)}")
+    print(f"Background median: {numpy.median(bkg.background)}")
+    res_loc = img.data - bkg.background
+    res_loc = numpy.where(res_loc > 0, res_loc, 0.0)
+    res.append(res_loc)
 res_hdu = [*[fits.PrimaryHDU(data=res[0], header=fits_file[0].header)], *[fits.ImageHDU(data=res[i], header=fits_file[i].header) for i in range(1, len(res))]]
 bkg_hdu = [*[fits.PrimaryHDU(data=backgrounds[0])], *[fits.ImageHDU(data=backgrounds[i]) for i in range(1, len(backgrounds))]]
 print("Result name:")
