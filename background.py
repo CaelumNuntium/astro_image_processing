@@ -12,11 +12,11 @@ parser.add_argument("input", action="store", help="input file name")
 parser.add_argument("-out", "--output", action="store", default=".", help="output directory")
 args = parser.parse_args()
 fits_file = fits.open(args.input)
-sigma_clip = stats.SigmaClip(sigma=3.0)
+sigma_clip = stats.SigmaClip(sigma=5.0)
 res = []
 backgrounds = []
 for img in fits_file:
-    bkg = background.Background2D(img.data, box_size, filter_size=(3, 3), sigma_clip=sigma_clip, bkg_estimator=background.MedianBackground(), coverage_mask=(img.data == numpy.nan), fill_value=0.0)
+    bkg = background.Background2D(img.data, box_size, filter_size=(11, 11), sigma_clip=sigma_clip, bkg_estimator=background.MedianBackground(), coverage_mask=(img.data == numpy.nan), fill_value=0.0)
     backgrounds.append(bkg.background)
     res.append(img.data - bkg.background)
 res_hdu = [*[fits.PrimaryHDU(data=res[0], header=fits_file[0].header)], *[fits.ImageHDU(data=res[i], header=fits_file[i].header) for i in range(1, len(res))]]
