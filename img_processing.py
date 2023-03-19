@@ -1,16 +1,24 @@
+print("Loading modules...")
+
 import pathlib
 import argparse
 import os
 import numpy
 import warnings
+import cv2
 from astropy.io import fits
+from astropy import visualization
+from photutils import detection
+from photutils import aperture
+from astropy import stats
+from matplotlib import pyplot as plt
 
-print("Loading...")
+print("OK")
 parser = argparse.ArgumentParser()
 parser.add_argument("-d", "--dir", action="store", default=".", help="Input directory")
 args = parser.parse_args()
 
-attributes = ["DATE-OBS", "TELESCOP", "INSTRUME", "OBJECT", "IMAGETYP", "START", "EXPTIME", "RA", "DEC"]
+attributes = ["DATE-OBS", "TELESCOP", "OBJECT", "IMAGETYP", "EXPTIME", "RA", "DEC"]
 attrs_to_save = ["DATE-OBS", "TELESCOP", "INSTRUME", "OBJECT", "PROG-ID", "OBSERVAT", "DETECTOR"]
 # attrs_to_calculate = ["Z"]
 
@@ -140,7 +148,6 @@ with warnings.catch_warnings():
     if numpy.sum(numpy.where(flat_data < 0.05, 1, 0)) > 0:
         print("Warning: FLAT contains very small elements (<0.05). Corresponding pixels of the result will be NaN")
     obj_images = [numpy.where(flat_data < 0.05, numpy.NaN, ((img[0].data - bias_data) * (exptime / img[0].header["EXPTIME"]) - dark_data) / flat_data) for img in obj_files]
-numpy.sum(obj_images, axis=0, out=obj_data)
 obj_header = fits.Header()
 obj_header["IMAGETYP"] = "obj"
 obj_header["EXPTIME"] = sum([img[0].header["EXPTIME"] for img in obj_files])
@@ -159,6 +166,77 @@ for attr in attrs_to_save:
             attr_stat = False
     if attr_stat:
         obj_header[attr] = attr0
+
+all_sources = []
+if len(obj_images) > 1:
+    for i in range(len(obj_images)):
+        img = obj_images[i]
+        mean, median, std = stats.sigma_clipped_stats(img, sigma=3.0)
+        detector = detection.DAOStarFinder(fwhm=7.0, threshold=7.0 * std)
+        sources = detector(img - median)
+        sources.add_index("id")
+        all_sources.append(sources)
+        positions = numpy.transpose((sources["xcentroid"], sources["ycentroid"]))
+        apertures = aperture.CircularAperture(positions, r=8.0)
+        norm = visualization.mpl_normalize.ImageNormalize(stretch=visualization.LogStretch())
+        plt.subplot(1, len(obj_images), i + 1)
+        plt.imshow(img, cmap='Greys', origin='lower', norm=norm, interpolation='nearest')
+        apertures.plot(color='blue', lw=1.5, alpha=0.5)
+        for star in sources:
+            plt.annotate(f"{int(star['id'])}", xy=(float(star["xcentroid"]) + 6, float(star["ycentroid"]) + 6))
+    print("\nMultiple object images selected. For correct alignment, please, select reference stars.")
+    print("Select and write down the same stars on the images below (minimum 3 stars required)")
+    print("Press Enter to show the images:")
+    input()
+    plt.show()
+    print("Please, select the same stars on the images; write down their numbers in the correct order")
+    ref_points_ids = []
+    for i in range(len(obj_images)):
+        print(f"Reference stars ids on image {i}:")
+        ref_points_ids.append([int(s) for s in input().split()])
+    n_points = len(ref_points_ids[0])
+    if n_points < 3:
+        print("Error: Minimum 3 reference stars required!")
+    for pid in ref_points_ids:
+        if len(pid) != n_points:
+            print("Error: The number of reference stars must be the same on all images!")
+            exit(4)
+    dst_points_ids = ref_points_ids[0]
+    dst_points = [(float((all_sources[0].loc["id", sid])["xcentroid"]), float((all_sources[0].loc["id", sid])["ycentroid"])) for sid in dst_points_ids]
+    print("Selected stars:")
+    print("  Image 0:")
+    for j in range(len(dst_points_ids)):
+        print(f"    # {dst_points_ids[j]}: {dst_points[j]}")
+    for i in range(1, len(ref_points_ids)):
+        scr_points_ids = ref_points_ids[i]
+        scr_points = [(float((all_sources[i].loc["id", sid])["xcentroid"]), float((all_sources[i].loc["id", sid])["ycentroid"])) for sid in scr_points_ids]
+        print(f"  Image {i}:")
+        for j in range(len(scr_points_ids)):
+            print(f"    # {scr_points_ids[j]}: {scr_points[j]}")
+        tfm = numpy.float32([[1, 0, 0], [0, 1, 0]])
+        A = []
+        b = []
+        for sp, dp in zip(scr_points, dst_points):
+            A.append([sp[0], 0, sp[1], 0, 1, 0])
+            A.append([0, sp[0], 0, sp[1], 0, 1])
+            b.append(dp[0])
+            b.append(dp[1])
+        result, residuals, rank, s = numpy.linalg.lstsq(numpy.array(A), numpy.array(b), rcond=None)
+        a0, a1, a2, a3, a4, a5 = result
+        tfm = numpy.float32([[a0, a2, a4], [a1, a3, a5]])
+        print("Found affine transform:")
+        print(f"determinant = {numpy.linalg.det(tfm[:2, :2])}")
+        print(f"x_shift = {tfm[0, 2]}")
+        print(f"y_shift = {tfm[1, 2]}")
+        tmp = numpy.ndarray(shape=(obj_images[i].shape[0], obj_images[i].shape[1], 3))
+        tmp[:, :, 0] = obj_images[i]
+        tmp[:, :, 1] = numpy.zeros(obj_images[i].shape)
+        tmp[:, :, 2] = numpy.zeros(obj_images[i].shape)
+        tmp = cv2.warpAffine(tmp, tfm, (obj_images[i].shape[1], obj_images[i].shape[0]), borderValue=numpy.nan)
+        obj_images[i] = tmp[:, :, 0]
+
+numpy.sum(obj_images, axis=0, out=obj_data)
+
 obj_hdu = fits.PrimaryHDU(data=obj_data, header=obj_header)
 
 print("Result file:")
