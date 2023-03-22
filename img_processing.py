@@ -3,14 +3,15 @@ print("Loading modules...")
 import pathlib
 import argparse
 import os
+import math
 import numpy
 import warnings
 import cv2
 from astropy.io import fits
 from astropy import visualization
+from astropy import stats
 from photutils import detection
 from photutils import aperture
-from astropy import stats
 from matplotlib import pyplot as plt
 
 print("OK")
@@ -22,7 +23,7 @@ attributes = ["DATE-OBS", "TELESCOP", "OBJECT", "IMAGETYP", "EXPTIME", "RA", "DE
 attrs_to_save = ["DATE-OBS", "TELESCOP", "INSTRUME", "OBJECT", "PROG-ID", "OBSERVAT", "DETECTOR"]
 # attrs_to_calculate = ["Z"]
 
-fits_names = [str(_) for _ in pathlib.Path(args.dir).glob("**/*.fits") if _ not in pathlib.Path(args.dir).glob("**/aimp/**/*.fits")] + [str(_) for _ in pathlib.Path(args.dir).glob("**/*.fts") if _ not in pathlib.Path(args.dir).glob("**/aimp/**/*.fts")]
+fits_names = [str(_) for _ in pathlib.Path(args.dir).glob("**/*.fits") if _ not in pathlib.Path(args.dir).glob("**/aimp/**/*.fits")] + [str(_) for _ in pathlib.Path(args.dir).glob("**/*.fts") if _ not in pathlib.Path(args.dir).glob("**/aimp/**/*.fts")] + [str(_) for _ in pathlib.Path(args.dir).glob("**/*.fit") if _ not in pathlib.Path(args.dir).glob("**/aimp/**/*.fit")]
 fits_names = [_ for _ in fits_names]
 print(f"{len(fits_names)} FITS files found in {args.dir}")
 fits_files = []
@@ -44,10 +45,12 @@ for f in fits_names:
         for attr in attributes:
             if attr in hdu.header:
                 print(f"\t    {attr} = {hdu.header[attr]}")
-    if "IMAGETYP" in img[0].header and img[0].header["IMAGETYP"] == "bias":
+    if "IMAGETYP" in img[0].header and (img[0].header["IMAGETYP"] == "bias" or img[0].header["IMAGETYP"] == "Bias Frame"):
         bias_nums.append(i)
     if "OBJECT" in img[0].header and img[0].header["OBJECT"] == "sunsky":
         flat_nums.append(i)
+    if "IMAGETYP" in img[0].header and img[0].header["IMAGETYP"] == "Dark Frame":
+        dark_nums.append(i)
 print("\n\nWarning: ONLY Primary HDUs will be processed in the next steps!")
 
 print(f"\nFound {len(bias_nums)} BIAS frames: ", end="")
@@ -57,7 +60,10 @@ print("\nDo you want to select other frames? (n)")
 if input() in ["y", "yes"]:
     print("\n\nSelect BIAS frames:")
     bias_nums = [int(_) for _ in input().split()]
-print("\nDo you want to select DARK frames? (n)")
+print(f"\nFound {len(bias_nums)} DARK frames: ", end="")
+for _ in dark_nums:
+    print(f"{_}", end=" ")
+print("\nDo you want to select other frames? (n)")
 if input() in ["y", "yes"]:
     print("\nSelect DARK frames:")
     dark_nums = [int(_) for _ in input().split()]
@@ -151,23 +157,32 @@ with warnings.catch_warnings():
 obj_header = fits.Header()
 obj_header["IMAGETYP"] = "obj"
 obj_header["EXPTIME"] = sum([img[0].header["EXPTIME"] for img in obj_files])
-scale = obj_files[0][0].header["IMSCALE"]
+if "IMSCALE" in obj_files[0][0].header:
+    scale = obj_files[0][0].header["IMSCALE"]
+else:
+    scale = 1.0
 for img in obj_files:
-    if img[0].header["IMSCALE"] != scale:
+    if "IMSCALE" in img[0].header and img[0].header["IMSCALE"] != scale:
         print("Error: Image scale must be the same!")
         exit(3)
 obj_header["IMSCALE"] = scale
 for attr in attrs_to_save:
-    attr0 = obj_files[0][0].header[attr]
-    attr_stat = True
+    if attr in obj_files[0][0].header:
+        attr0 = obj_files[0][0].header[attr]
+        attr_stat = True
+    else:
+        attr0 = "NONE"
+        attr_stat = False
     for img in obj_files:
-        if img[0].header[attr] != attr0:
+        if attr in img[0].header and img[0].header[attr] != attr0:
             print(f"Warning: Non equal values of {attr} attribute")
             attr_stat = False
     if attr_stat:
         obj_header[attr] = attr0
 
 all_sources = []
+n_rows = math.floor(math.sqrt(len(obj_images) / 2))
+n_cols = math.ceil(len(obj_images) / n_rows)
 if len(obj_images) > 1:
     for i in range(len(obj_images)):
         img = obj_images[i]
@@ -179,9 +194,9 @@ if len(obj_images) > 1:
         positions = numpy.transpose((sources["xcentroid"], sources["ycentroid"]))
         apertures = aperture.CircularAperture(positions, r=8.0)
         norm = visualization.mpl_normalize.ImageNormalize(stretch=visualization.LogStretch())
-        plt.subplot(1, len(obj_images), i + 1)
-        plt.imshow(img, cmap='Greys', origin='lower', norm=norm, interpolation='nearest')
-        apertures.plot(color='blue', lw=1.5, alpha=0.5)
+        plt.subplot(n_rows, n_cols, i + 1)
+        plt.imshow(img, cmap="Greys", origin="lower", norm=norm, interpolation="nearest")
+        apertures.plot(color="blue", lw=1.5, alpha=0.5)
         for star in sources:
             plt.annotate(f"{int(star['id'])}", xy=(float(star["xcentroid"]) + 6, float(star["ycentroid"]) + 6))
     print("\nMultiple object images selected. For correct alignment, please, select reference stars.")
