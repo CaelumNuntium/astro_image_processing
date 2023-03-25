@@ -1,15 +1,68 @@
-print("Loading modules...")
-
-import argparse
 import math
-import numpy
+import numpy as np
 import cv2
 from astropy.io import fits
-from astropy import visualization
 from astropy import stats
+from astropy import visualization
 from photutils import detection
 from photutils import aperture
 from matplotlib import pyplot as plt
+
+
+class Line(object):
+    def __init__(self, k, b):
+        self.k = k
+        self.b = b
+
+    def __call__(self, x):
+        return self.k * x + self.b
+
+
+class MyArray(object):
+    def __init__(self, arr):
+        self.array = arr
+
+    def __getitem__(self, item):
+        try:
+            return self.array[item]
+        except IndexError:
+            return 0        
+
+
+def slicing(image, line, step, datatype='f4'):
+    image = MyArray(image)
+    shape = image.array.shape
+    if 0 <= line(0) <= shape[1]:
+        xl = 0
+        yl = line(0)
+    elif line(0) < 0:
+        xl = -line.b / line.k
+        yl = 0
+    else:
+        xl = (shape[1] - line.b) / line.k
+        yl = shape[1]
+    if 0 <= line(shape[0]) <= shape[1]:
+        xr = shape[0]
+        yr = line(shape[0])
+    elif line(shape[0]) < 0:
+        xr = -line.b / line.k
+        yr = 0
+    else:
+        xr = (shape[1] - line.b) / line.k
+        yr = shape[1]
+    n = math.floor(math.sqrt((xr - xl) ** 2 + (yr - yl) ** 2) / step)
+    dx = step * math.sqrt(1 / (line.k ** 2 + 1))
+    res = np.ndarray(shape=(2, n), dtype=datatype)
+    for i in range(n):
+        x = xl + i * dx
+        y = line(x)
+        ix = math.floor(x)
+        iy = math.floor(y)
+        fx = x - ix
+        fy = y - iy
+        res[0, i] = math.sqrt((x - xl) ** 2 + (y - yl) ** 2)
+        res[1, i] = (1 - fx) * (1 - fy) * image[ix, iy] + fy * (1 - fx) * image[ix, iy + 1] + fx * (1 - fy) * image[ix + 1, iy] + fx * fy * image[ix + 1, iy + 1]
+    return res
 
 
 def align_images(obj_images, ref_stars=[]):
@@ -23,7 +76,7 @@ def align_images(obj_images, ref_stars=[]):
         sources = detector(im - median)
         sources.add_index("id")
         all_sources.append(sources)
-        positions = numpy.transpose((sources["xcentroid"], sources["ycentroid"]))
+        positions = np.transpose((sources["xcentroid"], sources["ycentroid"]))
         if len(ref_stars) == 0:
             apertures = aperture.CircularAperture(positions, r=8.0)
             norm = visualization.mpl_normalize.ImageNormalize(stretch=visualization.LogStretch())
@@ -71,7 +124,7 @@ def align_images(obj_images, ref_stars=[]):
         print(f"  Image {ii}:")
         for j in range(len(scr_points_ids)):
             print(f"    # {scr_points_ids[j]}: {scr_points[j]}")
-        tfm = numpy.float32([[1, 0, 0], [0, 1, 0]])
+        tfm = np.float32([[1, 0, 0], [0, 1, 0]])
         A = []
         b = []
         for sp, dp in zip(scr_points, dst_points):
@@ -79,57 +132,36 @@ def align_images(obj_images, ref_stars=[]):
             A.append([0, sp[0], 0, sp[1], 0, 1])
             b.append(dp[0])
             b.append(dp[1])
-        result, residuals, rank, s = numpy.linalg.lstsq(numpy.array(A), numpy.array(b), rcond=None)
+        result, residuals, rank, s = np.linalg.lstsq(np.array(A), np.array(b), rcond=None)
         a0, a1, a2, a3, a4, a5 = result
-        tfm = numpy.float32([[a0, a2, a4], [a1, a3, a5]])
+        tfm = np.float32([[a0, a2, a4], [a1, a3, a5]])
         print("Found affine transform:")
-        print(f"determinant = {numpy.linalg.det(tfm[:2, :2])}")
+        print(f"determinant = {np.linalg.det(tfm[:2, :2])}")
         print(f"x_shift = {tfm[0, 2]}")
         print(f"y_shift = {tfm[1, 2]}")
-        tmp = numpy.ndarray(shape=(obj_images[ii].shape[0], obj_images[ii].shape[1], 3))
+        tmp = np.ndarray(shape=(obj_images[ii].shape[0], obj_images[ii].shape[1], 3))
         tmp[:, :, 0] = obj_images[ii]
-        tmp[:, :, 1] = numpy.zeros(obj_images[ii].shape)
-        tmp[:, :, 2] = numpy.zeros(obj_images[ii].shape)
-        tmp = cv2.warpAffine(tmp, tfm, (obj_images[ii].shape[1], obj_images[ii].shape[0]), borderValue=numpy.nan)
+        tmp[:, :, 1] = np.zeros(obj_images[ii].shape)
+        tmp[:, :, 2] = np.zeros(obj_images[ii].shape)
+        tmp = cv2.warpAffine(tmp, tfm, (obj_images[ii].shape[1], obj_images[ii].shape[0]), borderValue=np.nan)
         obj_images[ii] = tmp[:, :, 0]
 
 
-p = [1, 1, 1]
-
-print("OK")
-parser = argparse.ArgumentParser()
-parser.add_argument("R", action="store", help="R filter image")
-parser.add_argument("G", action="store", help="G filter image")
-parser.add_argument("B", action="store", help="B filter image")
-parser.add_argument("-d", "--dir", action="store", default=".", help="directory (default value - current directory)")
-args = parser.parse_args()
-r_fits = fits.open(args.dir + "/" + args.R)
-g_fits = fits.open(args.dir + "/" + args.G)
-b_fits = fits.open(args.dir + "/" + args.B)
-print("\nWarning: ONLY Primary HDUs will be processed!")
-r_exp = float(r_fits[0].header["EXPTIME"])
-g_exp = float(g_fits[0].header["EXPTIME"])
-b_exp = float(b_fits[0].header["EXPTIME"])
-exp = min([r_exp, g_exp, b_exp])
-print(f"\nTotal exptime: {3 * exp} s")
-images = [r_fits[0].data, g_fits[0].data, b_fits[0].data]
-images[0] = images[0] * (exp / r_exp) * p[0]
-images[1] = images[1] * (exp / g_exp) * p[1]
-images[2] = images[2] * (exp / b_exp) * p[2]
-align_images(images, ref_stars=[[59, 39, 169, 137, 188], [53, 35, 181, 147, 201], [45, 26, 180, 143, 194]])
-max_val = []
-mean_val = []
-for i in range(len(images)):
-    images[i] = numpy.sqrt(images[i])
-    images[i] = numpy.where(numpy.isnan(images[0] + images[1] + images[2]), 0.0, images[i])
-rgb_image_tmp = numpy.array(images)
-print("Result filename:")
-filename = input()
-if not filename.endswith(".bmp"):
-    filename = filename + ".bmp"
-filename = args.dir + "/" + filename
-rgb_image = numpy.ndarray((rgb_image_tmp.shape[1], rgb_image_tmp.shape[2], 3), dtype='i4')
-rgb_image[:, :, 0] = rgb_image_tmp[2, :, :]
-rgb_image[:, :, 1] = rgb_image_tmp[1, :, :]
-rgb_image[:, :, 2] = rgb_image_tmp[0, :, :]
-cv2.imwrite(filename, rgb_image)
+fits_names = ["B_clean.fits", "I_clean.fits", "R_clean.fits", "V_clean.fits"]
+center = (513, 513)
+ref_points = [[45, 190, 143, 144], [59, 180, 134, 136], [59, 180, 137, 140], [53, 195, 147, 149]]
+images = []
+for f in fits_names:
+    hdul = fits.open(f)
+    images.append(np.array(hdul[0].data, dtype='f4'))
+align_images(images, ref_stars=ref_points)
+for i in range(len(fits_names)):
+    img = images[i]
+    sl = slicing(img, Line(0, center[1]), 1)
+    plt.xlabel("x")
+    plt.ylabel("I")
+    plt.plot(sl[0], sl[1], color="#00FF00")
+    fig = plt.gcf()
+    fig.set_size_inches(12, 6)
+    fig.savefig(f"{fits_names[i]}.png", dpi=250)
+    plt.show()
