@@ -21,7 +21,6 @@ args = parser.parse_args()
 
 attributes = ["DATE-OBS", "TELESCOP", "OBJECT", "IMAGETYP", "EXPTIME", "RA", "DEC"]
 attrs_to_save = ["DATE-OBS", "TELESCOP", "INSTRUME", "OBJECT", "PROG-ID", "OBSERVAT", "DETECTOR"]
-# attrs_to_calculate = ["Z"]
 
 fits_names = [str(_) for _ in pathlib.Path(args.dir).glob("**/*.fits") if _ not in pathlib.Path(args.dir).glob("**/aimp/**/*.fits")] + [str(_) for _ in pathlib.Path(args.dir).glob("**/*.fts") if _ not in pathlib.Path(args.dir).glob("**/aimp/**/*.fts")] + [str(_) for _ in pathlib.Path(args.dir).glob("**/*.fit") if _ not in pathlib.Path(args.dir).glob("**/aimp/**/*.fit")]
 fits_names = [_ for _ in fits_names]
@@ -60,7 +59,7 @@ print("\nDo you want to select other frames? (n)")
 if input() in ["y", "yes"]:
     print("\n\nSelect BIAS frames:")
     bias_nums = [int(_) for _ in input().split()]
-print(f"\nFound {len(bias_nums)} DARK frames: ", end="")
+print(f"\nFound {len(dark_nums)} DARK frames: ", end="")
 for _ in dark_nums:
     print(f"{_}", end=" ")
 print("\nDo you want to select other frames? (n)")
@@ -179,6 +178,11 @@ for attr in attrs_to_save:
             attr_stat = False
     if attr_stat:
         obj_header[attr] = attr0
+z = []
+for img in obj_files:
+    if "Z" in img[0].header:
+        z.append(float(img[0].header["Z"]))
+obj_header["Z"] = sum(z) / len(z)
 
 all_sources = []
 n_rows = math.floor(math.sqrt(len(obj_images) / 2))
@@ -256,7 +260,7 @@ obj_hdu = fits.PrimaryHDU(data=obj_data, header=obj_header)
 
 print("Result file:")
 filename = input()
-if not (filename.endswith(".fts") or filename.endswith(".fits")):
+if not (filename.endswith(".fts") or filename.endswith(".fits") or filename.endswith(".fit")):
     filename = filename + ".fits"
 fits.HDUList([obj_hdu]).writeto(args.dir + "/aimp/" + filename, overwrite=True)
 print(f"Result saved to: {args.dir + '/aimp/' + filename}")

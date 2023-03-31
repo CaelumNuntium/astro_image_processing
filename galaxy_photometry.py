@@ -147,21 +147,41 @@ def align_images(obj_images, ref_stars=[]):
         obj_images[ii] = tmp[:, :, 0]
 
 
+def to_magnitude(origin, exp_time, x_scale, y_scale, z, k, std_const):
+    mu = -2.5 * np.log10(origin / exp_time) + 2.5 * math.log10(x_scale * y_scale)
+    mu = mu - k / math.cos(z)
+    mu = mu + std_const
+    return mu
+
+
 fits_names = ["B_clean.fits", "I_clean.fits", "R_clean.fits", "V_clean.fits"]
+k_sao = [0.34, 0.08, 0.15, 0.21]
+const = [26.5, 26.0, 26.4, 26.3]
 center = (513, 513)
-ref_points = [[45, 190, 143, 144], [59, 180, 134, 136], [59, 180, 137, 140], [53, 195, 147, 149]]
+ref_points = [[46, 195, 145, 146], [59, 180, 134, 136], [59, 180, 137, 140], [53, 195, 147, 149]]
 images = []
+z_dist = []
+exptime = []
+x_scales = []
+y_scales = []
 for f in fits_names:
     hdul = fits.open(f)
     images.append(np.array(hdul[0].data, dtype='f4'))
+    z_dist.append(float(hdul[0].header["Z"]))
+    exptime.append(float(hdul[0].header["EXPTIME"]))
+    scale = hdul[0].header["IMSCALE"].split("x")
+    x_scales.append(float(scale[0]))
+    y_scales.append(float(scale[1]))
 align_images(images, ref_stars=ref_points)
 for i in range(len(fits_names)):
     img = images[i]
-    sl = slicing(img, Line(0, center[1]), 1)
-    plt.xlabel("x")
-    plt.ylabel("I")
-    plt.plot(sl[0], sl[1], color="#00FF00")
-    fig = plt.gcf()
-    fig.set_size_inches(12, 6)
-    fig.savefig(f"{fits_names[i]}.png", dpi=250)
-    plt.show()
+    for k in range(-80, 90, 10):
+        sl = slicing(img, Line(math.tan(k / 180 * math.pi), center[1] - math.tan(k / 180 * math.pi) * center[0]), 1)
+        plt.xlabel(f"x, {k} degrees")
+        plt.ylabel("Surface brightness, m/asec^2")
+        plt.plot(sl[0], to_magnitude(sl[1], exptime[i], x_scales[i], y_scales[i], z_dist[i], k_sao[i], const[i]), color="#00FF00")
+        fig = plt.gcf()
+        fig.set_size_inches(12, 6)
+        fig.savefig(f"{fits_names[i]}k{k}.png", dpi=250)
+        # plt.show()
+        fig.clear()
