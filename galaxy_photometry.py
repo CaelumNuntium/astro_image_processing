@@ -147,14 +147,29 @@ def align_images(obj_images, ref_stars=[]):
         obj_images[ii] = tmp[:, :, 0]
 
 
+def aperture_curve(image, center, r_max, step, datatype='f4'):
+    n = math.floor(r_max / step)
+    res = np.ndarray(shape=(2, n), dtype=datatype)
+    for i in range(n):
+        r = i * step
+        res[0, i] = r
+        if r == 0:
+            res[1, i] = 0
+        else:
+            ap = aperture.CircularAperture(center, r=r)
+            res[1, i] = float(aperture.aperture_photometry(image, ap)["aperture_sum"][0])
+    return res
+
+
 def to_magnitude(origin, exp_time, x_scale, y_scale, z, k, std_const):
     mu = -2.5 * np.log10(origin / exp_time) + 2.5 * math.log10(x_scale * y_scale)
-    mu = mu - k / math.cos(z)
+    mu = mu - k / math.cos(z / 180 * math.pi)
     mu = mu + std_const
     return mu
 
 
 fits_names = ["B_clean.fits", "I_clean.fits", "R_clean.fits", "V_clean.fits"]
+# fits_names = ["B_row.fts"]
 k_sao = [0.34, 0.08, 0.15, 0.21]
 const = [26.5, 26.0, 26.4, 26.3]
 center = (513, 513)
@@ -185,3 +200,26 @@ for i in range(len(fits_names)):
         fig.savefig(f"{fits_names[i]}k{k}.png", dpi=250)
         # plt.show()
         fig.clear()
+    crv = aperture_curve(img, center, 300, 5)
+    plt.xlabel("r, asec")
+    plt.ylabel("flux, m")
+    plt.plot(crv[0] / x_scales[i], to_magnitude(crv[1], exptime[i], x_scales[i], y_scales[i], z_dist[i], k_sao[i], const[i]), color="#0000FF")
+    m = 40 + np.nanmedian(img)
+    print(f"{fits_names[i]}: {m}")
+    for _ in range(1, len(crv[1])):
+        if crv[1][_] - crv[1][_ - 1] < 2 * math.pi * crv[0][_] * 5 * m:
+            print(f"Galaxy magnitude in {fits_names[i]}: {to_magnitude(crv[1][_], exptime[i], x_scales[i], y_scales[i], z_dist[i], k_sao[i], const[i])}")
+            plt.plot(crv[0] / x_scales[i], [to_magnitude(crv[1][_], exptime[i], x_scales[i], y_scales[i], z_dist[i], k_sao[i], const[i])] * len(crv[1]), color="#FF0000")
+            break
+    fig = plt.gcf()
+    fig.set_size_inches(12, 6)
+    fig.savefig(f"{fits_names[i]}_aperture.png", dpi=250)
+    fig.clear()
+    # plt.show()
+v_img = to_magnitude(np.where(images[3] > 1000, images[3], 0), exptime[3], x_scales[3], y_scales[3], z_dist[3], k_sao[3], const[3])
+b_img = to_magnitude(np.where(images[0] > 1000, images[0], 0), exptime[0], x_scales[0], y_scales[0], z_dist[0], k_sao[0], const[0])
+bv_img = v_img - b_img
+# plt.imshow(bv_img)
+# plt.show()
+hdu_list = [fits.PrimaryHDU(data=bv_img)]
+fits.HDUList(hdu_list).writeto("BV.fits", overwrite=True)
