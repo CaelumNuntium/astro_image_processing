@@ -171,7 +171,7 @@ def to_magnitude(origin, exp_time, x_scale, y_scale, z, k, std_const):
 fits_names = ["B_clean.fits", "I_clean.fits", "R_clean.fits", "V_clean.fits"]
 # fits_names = ["B_row.fts"]
 k_sao = [0.34, 0.08, 0.15, 0.21]
-const = [26.5, 26.0, 26.4, 26.3]
+const = [29.8, 29.0, 29.3, 29.1]
 center = (513, 513)
 ref_points = [[46, 195, 145, 146], [59, 180, 134, 136], [59, 180, 137, 140], [53, 195, 147, 149]]
 images = []
