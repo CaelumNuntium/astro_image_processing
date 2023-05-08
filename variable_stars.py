@@ -195,6 +195,7 @@ fig = plt.gcf()
 fig.set_size_inches(12, 6)
 fig.savefig(f"relative_magnitude_{args.f}.png", dpi=250)
 plt.show()
+print(f"Magnitude of the 1st standard measured by the 2nd standard: {numpy.mean(rel_magnitudes1)}, std = {numpy.std(rel_magnitudes1)}")
 zero_points = [numpy.mean([ref_mag[0] + 2.5 * math.log10(fluxes[_][1]), ref_mag[1] + 2.5 * math.log10(fluxes[_][3])]) for _ in range(len(fluxes))]
 zero_point_errors = [math.sqrt((2.5 * errs[_][1] / fluxes[_][1] / 2) ** 2 + (2.5 * errs[_][3] / fluxes[_][3] / 2) ** 2) + 0.005 for _ in range(len(fluxes))]
 var_magnitudes1 = [zero_points[_] - 2.5 * math.log10(fluxes[_][0]) for _ in range(len(fluxes))]

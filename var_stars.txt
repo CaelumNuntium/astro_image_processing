@@ -1,0 +1,35 @@
+D:\Ex`,f\Астрономический наблюдательный практикум\astro_image_processing>python variable_stars.py -f h
+Loading modules...
+78 FITS files found in ../Variable_Stars/h
+WARNING: non-ASCII characters are present in the FITS file header and have been replaced by "?" characters [astropy.io.fits.util]
+77 images will be processed
+FWHM = 2.2845379033403472
+Aperture radius: r = 7.853613710021042
+Cannot find precise coordinates of star in h9.fit image at (228.37164015173792, 82.30109104987045)
+Do you want to use approximate coordinates? (y)
+y
+Magnitude of the 1st standard measured by the 2nd standard: 7.711997942774382, std = 0.06197588631529833
+
+D:\Ex`,f\Астрономический наблюдательный практикум\astro_image_processing>python variable_stars.py -f j
+Loading modules...
+79 FITS files found in ../Variable_Stars/j
+WARNING: non-ASCII characters are present in the FITS file header and have been replaced by "?" characters [astropy.io.fits.util]
+73 images will be processed
+FWHM = 1.361629688913009
+Aperture radius: r = 5.084889066739027
+Cannot find precise coordinates of star in j12.fit image at (216.70894345435184, 73.71740901292269)
+Do you want to use approximate coordinates? (y)
+y
+Magnitude of the 1st standard measured by the 2nd standard: 8.579043000570255, std = 0.05617047327566125
+
+D:\Ex`,f\Астрономический наблюдательный практикум\astro_image_processing>python variable_stars.py -f k
+Loading modules...
+60 FITS files found in ../Variable_Stars/k
+WARNING: non-ASCII characters are present in the FITS file header and have been replaced by "?" characters [astropy.io.fits.util]
+59 images will be processed
+FWHM = 2.52632296641264
+Aperture radius: r = 8.578968899237921
+Cannot find precise coordinates of star in k11.fit image at (217.4857706618203, 75.63508783072898)
+Do you want to use approximate coordinates? (y)
+y
+Magnitude of the 1st standard measured by the 2nd standard: 7.404862392477401, std = 0.07138483059021021
